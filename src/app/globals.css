@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@theme {
+  --color-neon: #00FF41;
+  --color-neon-dim: rgba(0, 255, 65, 0.15);
+  --color-cyber-blue: #00BFFF;
+  --color-cyber-yellow: #FFD700;
+  --color-cyber-pink: #FF00FF;
+  --color-dark: #0a0a0a;
+}
+
+/* Cyberpunk scan-line animation */
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+/* Neon text pulse */
+@keyframes neon-pulse {
+  0%, 100% {
+    text-shadow: 0 0 10px #00FF41, 0 0 20px #00FF41, 0 0 40px #00FF41;
+    opacity: 1;
+  }
+  50% {
+    text-shadow: 0 0 5px #00FF41;
+    opacity: 0.8;
+  }
+}
+
+/* Cursor blink for terminal feel */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Corner bracket animation */
+@keyframes bracket-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.neon-text {
+  animation: neon-pulse 3s ease-in-out infinite;
+}
+
+.scan-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 255, 65, 0.04) 50%,
+    transparent 100%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: #00FF41; border-radius: 2px; }
