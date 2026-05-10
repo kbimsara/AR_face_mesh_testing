@@ -21,8 +21,17 @@ const IDX = {
   R_IRIS:    473,   // right iris centre
   L_EYE_OUT:  33,   // left  eye outer corner (fallback)
   R_EYE_OUT: 263,   // right eye outer corner
-  NOSE_BRIDGE: 168, // glabella
+  NOSE_BRIDGE: 168, // glabella  — glasses rest here (between eyebrows / top of nose)
+  NOSE_TIP:    1,   // tip of nose — used to derive face "down" direction
 } as const;
+
+// Reusable temp vectors so the per-frame hot path allocates nothing
+const _vX  = new THREE.Vector3();
+const _vY  = new THREE.Vector3();
+const _vZ  = new THREE.Vector3();
+const _vD  = new THREE.Vector3();
+const _mat = new THREE.Matrix4();
+const _q   = new THREE.Quaternion();
 
 export class ARGlasses {
   readonly renderer: THREE.WebGLRenderer;
@@ -95,52 +104,77 @@ export class ARGlasses {
 
   /**
    * Update 3-D pose from the current frame's MediaPipe landmarks.
+   *
+   * Strategy: build an orthonormal face basis from three anchor points and
+   * orient the glasses with a single rotation matrix.
+   *
+   *   X axis = right ear-line  (left iris  → right iris)
+   *   Y axis = down           (eye-mid    → nose-tip,  re-orthogonalised)
+   *   Z axis = forward        (out of face, X × downVec)
+   *
+   * The pivot is then translated to the glabella (landmark 168) — the spot
+   * where real glasses physically rest — and pushed slightly forward along
+   * the face normal so the bridge of the frame doesn't clip into the head.
    * Call once per frame inside fm.onResults(), before render().
    */
   updatePose(landmarks: Lm[]) {
     if (!this._loaded) return;
 
-    // Best anchor = iris centres (available when refineLandmarks: true)
-    const L = landmarks[IDX.L_IRIS] ?? landmarks[IDX.L_EYE_OUT];
-    const R = landmarks[IDX.R_IRIS] ?? landmarks[IDX.R_EYE_OUT];
-    const N = landmarks[IDX.NOSE_BRIDGE];
-    if (!L || !R || !N) return;
+    const L  = landmarks[IDX.L_IRIS] ?? landmarks[IDX.L_EYE_OUT];
+    const R  = landmarks[IDX.R_IRIS] ?? landmarks[IDX.R_EYE_OUT];
+    const NB = landmarks[IDX.NOSE_BRIDGE];
+    const NT = landmarks[IDX.NOSE_TIP];
+    if (!L || !R || !NB || !NT) return;
 
-    // ── Pixel coordinates ─────────────────────────────────────────────────────
-    const lx = L.x * this.W,  ly = L.y * this.H;
-    const rx = R.x * this.W,  ry = R.y * this.H;
+    // ── Lift to pixel space (z stays in MediaPipe's normalised units, scaled
+    //    by W so it lives on the same magnitude as x). This pseudo-3D space
+    //    is what we render the glasses in. ────────────────────────────────
+    const W = this.W, H = this.H;
+    const lx = L.x  * W, ly = L.y  * H, lz = L.z  * W;
+    const rx = R.x  * W, ry = R.y  * H, rz = R.z  * W;
+    const bx = NB.x * W, by = NB.y * H, bz = NB.z * W;
+    const tx = NT.x * W, ty = NT.y * H, tz = NT.z * W;
 
-    // IPD in pixels
     const ipd = Math.hypot(rx - lx, ry - ly);
-    if (ipd < 5) return; // face too small / not tracked
+    if (ipd < 5) return;
 
-    // ── Position ──────────────────────────────────────────────────────────────
-    // Glasses centre = midpoint of the two iris positions
-    // Shift down slightly so the frame sits over the eyes, not above them
-    const cx = (lx + rx) / 2;
-    const cy = (ly + ry) / 2 + ipd * 0.55;
-    // Z: bring glasses in front of face; MediaPipe z is negative-toward-camera
-    const cz = 4000 + N.z * -600;
+    // ── Build orthonormal face basis ─────────────────────────────────────
+    // X: along the eye-line (left iris → right iris)
+    _vX.set(rx - lx, ry - ly, rz - lz).normalize();
+    // Down vector candidate: from eye midpoint to nose tip
+    const emx = (lx + rx) * 0.5, emy = (ly + ry) * 0.5, emz = (lz + rz) * 0.5;
+    _vD.set(tx - emx, ty - emy, tz - emz).normalize();
+    // Z (forward, out of face) = X × downVec
+    _vZ.crossVectors(_vX, _vD).normalize();
+    // Re-orthogonalise Y against X & Z: face's true "down"
+    _vY.crossVectors(_vZ, _vX).normalize();
 
-    // ── Scale ─────────────────────────────────────────────────────────────────
-    // Wayfarer frame width ≈ 2.3× inter-pupillary distance
+    // ── Rotation: model's local axes → face basis ─────────────────────────
+    // Three.js default model orientation: +X right, +Y up, +Z toward camera.
+    // Our scene's Y is flipped (orthographic with top=0, bottom=H), so
+    // "face up" in scene-space is -faceDown.
+    _mat.makeBasis(
+      _vX,
+      _vY.clone().multiplyScalar(-1),  // flip down → up
+      _vZ,
+    );
+    _q.setFromRotationMatrix(_mat);
+
+    // ── Position: anchor on glabella, nudge along face normal ─────────────
+    // Forward push so the bridge doesn't intersect the face mesh
+    const fwd = ipd * 0.15;
+    const cx = bx + _vZ.x * fwd;
+    const cy = by + _vZ.y * fwd;
+    // Scene Z stays in the orthographic frustum; preserve depth ordering
+    const cz = 4000 + NB.z * -600;
+
+    // ── Scale ─────────────────────────────────────────────────────────────
+    // Wayfarer frame width ≈ 2.3× IPD
     const scale = ipd * 2.3;
 
-    // ── Rotation ──────────────────────────────────────────────────────────────
-    // Roll — in-plane tilt of the eye line
-    const roll = Math.atan2(ry - ly, rx - lx);
-
-    // Yaw — left/right head turn from Z-depth asymmetry
-    const yaw = Math.atan2((R.z - L.z) * this.W, ipd) * 1.6;
-
-    // Pitch — forward/back head tilt
-    const ny = N.y * this.H;
-    const pitch = Math.atan2(ny - cy, ipd) * 0.5;
-
-    // ── Apply ─────────────────────────────────────────────────────────────────
+    // ── Apply ─────────────────────────────────────────────────────────────
     this.pivot.position.set(cx, cy, cz);
-    this.pivot.rotation.order = "YXZ";
-    this.pivot.rotation.set(pitch, yaw, -roll);
+    this.pivot.quaternion.copy(_q);
     this.pivot.scale.setScalar(scale);
   }
 
