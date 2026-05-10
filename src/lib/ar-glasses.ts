@@ -118,7 +118,7 @@ export class ARGlasses {
     // Glasses centre = midpoint of the two iris positions
     // Shift down slightly so the frame sits over the eyes, not above them
     const cx = (lx + rx) / 2;
-    const cy = (ly + ry) / 2 + ipd * 0.25;
+    const cy = (ly + ry) / 2 + ipd * 0.55;
     // Z: bring glasses in front of face; MediaPipe z is negative-toward-camera
     const cz = 4000 + N.z * -600;
 
