@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { FlipHorizontal, Grid3x3, Circle, Download, Glasses } from "lucide-react";
 import clsx from "clsx";
 import { CameraView } from "@/components/CameraView";
@@ -32,12 +32,34 @@ function FaceMeshTrackerCore({ onRetry }: CoreProps) {
   const [showLandmarks, setShowLandmarks] = useState(false);
   const [mirror, setMirror] = useState(true);
 
-  // AR Glasses — loaded lazily when the user picks a GLB file
+  // AR Glasses
   const arGlassesRef = useRef<ARGlasses | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [glassesLoaded, setGlassesLoaded] = useState(false);
   const [glassesOn, setGlassesOn] = useState(true);
   const [glassesLoading, setGlassesLoading] = useState(false);
+
+  // Auto-load the bundled Wayfarer model on first mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setGlassesLoading(true);
+      try {
+        const { ARGlasses } = await import("@/lib/ar-glasses");
+        const instance = new ARGlasses();
+        await instance.loadURL("/wayfarer_v2.glb");
+        if (cancelled) { instance.dispose(); return; }
+        arGlassesRef.current = instance;
+        setGlassesLoaded(true);
+        setGlassesOn(true);
+      } catch (e) {
+        console.warn("Auto-load wayfarer_v2.glb failed:", e);
+      } finally {
+        if (!cancelled) setGlassesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const drawOptions: DrawOptions = { showMesh, showLandmarks, mirror };
 
