@@ -169,8 +169,11 @@ export class ARGlasses {
     const cz = 4000 + NB.z * -600;
 
     // ── Scale ─────────────────────────────────────────────────────────────
-    // Wayfarer frame width ≈ 2.3× IPD
-    const scale = ipd * 2.3;
+    // Model exported from Blender with front lens-to-lens width pre-normalised
+    // to 1.0 unit, so this multiplier IS the desired frame width in pixels.
+    //   ~1.7 × IPD ≈ typical Wayfarer frame width relative to inter-pupillary
+    //   distance for an average adult face.
+    const scale = ipd * 1.7;
 
     // ── Apply ─────────────────────────────────────────────────────────────
     this.pivot.position.set(cx, cy, cz);
@@ -224,26 +227,12 @@ export class ARGlasses {
             });
           });
 
-          // ── Normalise to unit size ──────────────────────────────────────────
-          // Compute bounding box of the raw model (before any transform)
-          const box = new THREE.Box3().setFromObject(model);
-          const size = new THREE.Vector3();
-          box.getSize(size);
-          const maxDim = Math.max(size.x, size.y, size.z) || 1;
-
-          // Scale model so longest axis = 1 unit
-          model.scale.setScalar(1 / maxDim);
-
-          // Centre model at inner group origin
-          // After scaling, the centre is at centre_world / maxDim
-          const centre = new THREE.Vector3();
-          box.getCenter(centre);
-          model.position.set(
-            -centre.x / maxDim,
-            -centre.y / maxDim,
-            -centre.z / maxDim
-          );
-
+          // The wayfarer_v3.glb exported from Blender is already pre-normalised:
+          //   • Origin = top-of-bridge (anchor on glabella, landmark 168)
+          //   • Front lens-to-lens width = 1.0 unit (allows simple ipd × k scaling)
+          //   • +X right · +Y up · +Z forward (lens-front toward camera)
+          //   • Arms extend in -Z (away from camera, behind the wearer)
+          // No additional centering or scaling needed here.
           this.inner.add(model);
           this._loaded = true;
           resolve();

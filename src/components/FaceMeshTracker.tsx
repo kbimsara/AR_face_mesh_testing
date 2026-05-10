@@ -47,7 +47,7 @@ function FaceMeshTrackerCore({ onRetry }: CoreProps) {
       try {
         const { ARGlasses } = await import("@/lib/ar-glasses");
         const instance = new ARGlasses();
-        await instance.loadURL("/wayfarer_v2.glb");
+        await instance.loadURL("/wayfarer_v3.glb");
         if (cancelled) { instance.dispose(); return; }
         arGlassesRef.current = instance;
         setGlassesLoaded(true);
