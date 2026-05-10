@@ -32,13 +32,48 @@ function FaceMeshTrackerCore({ onRetry }: CoreProps) {
   const [showLandmarks, setShowLandmarks] = useState(false);
   const [mirror, setMirror] = useState(true);
 
+  // AR Glasses — loaded lazily when the user picks a GLB file
+  const arGlassesRef = useRef<ARGlasses | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [glassesLoaded, setGlassesLoaded] = useState(false);
+  const [glassesOn, setGlassesOn] = useState(true);
+  const [glassesLoading, setGlassesLoading] = useState(false);
+
   const drawOptions: DrawOptions = { showMesh, showLandmarks, mirror };
+
+  // Pass arGlassesRef so the hook can composite the overlay each frame.
+  // Using a ref means loading a new file never restarts the camera/model.
+  const effectiveArRef = glassesOn ? arGlassesRef : { current: null };
 
   const { status, errorMessage, fps, takeScreenshot } = useFaceMesh(
     videoRef,
     canvasRef,
-    drawOptions
+    drawOptions,
+    effectiveArRef
   );
+
+  async function handleGlassesFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setGlassesLoading(true);
+    try {
+      // Lazy-import ARGlasses so Three.js is never bundled until needed
+      const { ARGlasses } = await import("@/lib/ar-glasses");
+      if (!arGlassesRef.current) {
+        arGlassesRef.current = new ARGlasses();
+      }
+      await arGlassesRef.current.loadFile(file);
+      setGlassesLoaded(true);
+      setGlassesOn(true);
+    } catch (err) {
+      console.error("Failed to load GLB:", err);
+    } finally {
+      setGlassesLoading(false);
+      // Reset input so the same file can be re-selected
+      e.target.value = "";
+    }
+  }
 
   const isLoading = status === "idle" || status === "requesting-camera" || status === "loading-model";
   const isReady = status === "ready";
@@ -99,6 +134,48 @@ function FaceMeshTrackerCore({ onRetry }: CoreProps) {
             label="Save"
             active={false}
             onClick={takeScreenshot}
+          />
+
+          {/* Divider */}
+          <div className="w-8 h-px bg-gray-700 my-1" />
+
+          {/* Glasses button — long-press behaviour:
+              if a model is already loaded, toggle it on/off;
+              if not loaded, open the file picker */}
+          <SideButton
+            icon={
+              glassesLoading
+                ? <span className="w-4 h-4 border-2 border-gray-400 border-t-white rounded-full animate-spin block" />
+                : <Glasses size={18} />
+            }
+            label={glassesLoaded ? (glassesOn ? "On" : "Off") : "Load"}
+            active={glassesLoaded && glassesOn}
+            onClick={() => {
+              if (glassesLoaded) {
+                setGlassesOn((v) => !v);
+              } else {
+                fileInputRef.current?.click();
+              }
+            }}
+          />
+          {/* Re-load button — only shown when a model is already loaded */}
+          {glassesLoaded && (
+            <SideButton
+              icon={<span className="text-xs">GLB</span>}
+              label="Swap"
+              active={false}
+              onClick={() => fileInputRef.current?.click()}
+            />
+          )}
+
+          {/* Hidden file input for GLB selection */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".glb,.gltf"
+            className="hidden"
+            onChange={handleGlassesFile}
+            aria-label="Select sunglasses GLB file"
           />
         </nav>
       )}
