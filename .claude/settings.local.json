@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"E:\\\\Github\\\\AR_face_mesh_testing\\\\docs\\\\superpowers\\\\plans\")"
+    ]
+  }
+}
