@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { FlipHorizontal, Grid3x3, Circle, Download } from "lucide-react";
+import { FlipHorizontal, Grid3x3, Circle, Download, Glasses } from "lucide-react";
 import clsx from "clsx";
 import { CameraView } from "@/components/CameraView";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { PermissionError } from "@/components/PermissionError";
 import { useFaceMesh } from "@/hooks/useFaceMesh";
 import type { DrawOptions } from "@/lib/mediapipe";
+import type { ARGlasses } from "@/lib/ar-glasses";
 
 export function FaceMeshTracker() {
   const [retryKey, setRetryKey] = useState(0);

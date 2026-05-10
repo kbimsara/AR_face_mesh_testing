@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import type { AppStatus, DrawOptions } from "@/lib/mediapipe";
 import { MEDIAPIPE_CDN } from "@/lib/mediapipe";
 import { drawOneLandmarkSet, type DrawFns } from "@/utils/drawFaceMesh";
+import type { ARGlasses } from "@/lib/ar-glasses";
 
 export interface UseFaceMeshReturn {
   status: AppStatus;
@@ -25,7 +26,9 @@ export interface UseFaceMeshReturn {
 export function useFaceMesh(
   videoRef: RefObject<HTMLVideoElement | null>,
   canvasRef: RefObject<HTMLCanvasElement | null>,
-  drawOptions: DrawOptions
+  drawOptions: DrawOptions,
+  /** Optional AR glasses instance — read via ref, never triggers effect re-run */
+  arGlassesRef?: RefObject<ARGlasses | null>
 ): UseFaceMeshReturn {
   const [status, setStatus] = useState<AppStatus>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -237,6 +240,27 @@ export function useFaceMesh(
               );
             }
             ctx.restore();
+
+            // ── AR Glasses overlay ────────────────────────────────────────
+            // The glasses are rendered in raw (non-mirrored) landmark space
+            // and composited with the same mirror transform as video/mesh.
+            const glasses = arGlassesRef?.current;
+            if (glasses?.hasModel) {
+              const lm = results.multiFaceLandmarks[0] as Array<{
+                x: number; y: number; z: number;
+              }>;
+              glasses.resize(canvas.width, canvas.height);
+              glasses.updatePose(lm);
+              glasses.render();
+
+              ctx.save();
+              if (opts.mirror) {
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
+              }
+              ctx.drawImage(glasses.canvas, 0, 0);
+              ctx.restore();
+            }
           }
         });
 
